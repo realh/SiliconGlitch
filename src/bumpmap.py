@@ -77,10 +77,14 @@ def height_map_to_normals(hm_surf, amp = 1):
                 vx = nx / mag
                 vy = ny / mag
                 vz = nz / mag
-            print(vx, vy, vz)
             nm[i] = signed_byte(vy)     # B = y
             nm[i + 1] = signed_byte(vz) # G = z
             nm[i + 2] = 0               # R = 0
             nm[i + 3] = signed_byte(vx) # A = x
+            # Use the following values for visual inspection
+            #nm[i] = signed_byte(vz)     # B = z
+            #nm[i + 1] = signed_byte(vy) # G = y
+            #nm[i + 2] = signed_byte(vx) # R = x
+            #nm[i + 3] = 255             # A = opaque
             i += 4
     return nm_surf
