@@ -1,6 +1,7 @@
 import os
 import sys
 from cairo import Context, Format, ImageSurface
+from bumpmap import height_map_to_normals
 
 class MipMapGenerator:
     """ A MipMapGenerator is the abstract base for a class that can generate
@@ -38,7 +39,8 @@ class MipMapGenerator:
         if img == None:
             return
         img = self.resize(img, w, h)
-        # TODO: N should be converted from height map to normals
+        if tchar == 'N':
+            img = height_map_to_normals(img)
         d = os.path.abspath(os.path.dirname(sys.argv[0]))
         filename = os.path.join(os.path.dirname(d), "pngs",
                 "Stadium%s%s%02d.png" % (self.basename, tchar, layer + 1))
