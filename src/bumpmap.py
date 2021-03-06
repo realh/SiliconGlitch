@@ -1,16 +1,12 @@
 import math
-from cairo import Format, ImageSurface
+from pygame import Color, PixelArray, Surface, SRCALPHA
 
-def sample_luminance(data, w, h, x, y):
+def sample_luminance(pix, w, h, x, y):
     """ Gets the value of the G channel in the pixel at (x, y) in data
-    representing a w x h surface. x and y wrap around if out of range. data's
-    format is ARGB32 (Cairo's RGB24 is the same with A ignored) stored in
-    native endianness. This assumes we're running on a little-endian system,
-    which is naughty, but OK because:
-    1. In practice I'm never going to run this on a BE system.
-    2. The caller is only interested in luminance of greyscale surfaces, so it
-       doesn't matter whether we read R when we think we're reading G.
-    """
+    representing a w x h surface. x and y wrap around if out of range. 
+    The format is assumed to be ARGB32, but we don't care about endianness,
+    because it doesn't matter whether we sample blue or green. The result is
+    a float 0.0-1.0. """
     if x >= w:
         x -= w
     elif x < 0:
@@ -19,8 +15,8 @@ def sample_luminance(data, w, h, x, y):
         y -= h
     elif y < 0:
         y += h
-    i = (x + y * w) * 4
-    return data[i + 1] / 255
+    rgba = pix[x, y]
+    return ((rgba >> 16) & 255) / 255
 
 
 def nc_to_byte(f):
@@ -30,23 +26,22 @@ def nc_to_byte(f):
     
 
 def height_map_to_normals(hm_surf, amp = 20):
-    """ hm_surf is an ImageSurface whose pixel values represent heights between
-    0 and 1. Only the green channel is read. The output consists of normals for
-    the surface in R0GzByAx format. amp is a multiplication factor for the
-    slope ratios. GIMP's default equivalent for amp is 10, so we might as well
-    use that, bearing in mind we also divide by 2 to average 2 differences
-    across 3 pixels. """
+    """ hm_surf is a Surface whose pixel values represent heights between
+    0 and 1. Only the green (or blue) channel is read. The output consists of
+    normals for the surface in R0GzByAx format. amp is a multiplication factor
+    for the slope ratios. GIMP's default equivalent for amp is 10, so we might
+    as well use that, bearing in mind we also divide by 2 to average 2
+    differences across 3 pixels. """
     w = hm_surf.get_width()
     h = hm_surf.get_height()
-    hm = hm_surf.get_data()
-    nm_surf = ImageSurface(Format.ARGB32, w, h)
-    nm = nm_surf.get_data()
+    hm = PixelArray(hm_surf)
+    nm_surf = Surface((w, h), SRCALPHA, 32)
+    nm = PixelArray(nm_surf)
     # The slope ratio is the average of two differences (hence / 2): 
     # current - previous and next - current, divided by the distance in the
     # plane (1), then we multiply by amp. So adjust amp to do all of that in
     # one multiplication.
     amp /= 2
-    i = 0
     for y in range(h):
         for x in range(w):
             # p gets cancelled out by averaging with p1 and p0
@@ -78,16 +73,12 @@ def height_map_to_normals(hm_surf, amp = 20):
                 vx = nx / mag
                 vy = ny / mag
                 vz = nz / mag
-            # Trackmania's swizzled format.
-            nm[i] = nc_to_byte(vy)     # B = y
-            nm[i + 1] = nc_to_byte(vz) # G = z
-            nm[i + 2] = 0              # R = 0
-            nm[i + 3] = nc_to_byte(vx) # A = x
-            # Use the following for visual inspection and/or comparison with
-            # standard normal map generators.
-            #nm[i] = nc_to_byte(vz)     # B = z
-            #nm[i + 1] = nc_to_byte(vy) # G = y
-            #nm[i + 2] = nc_to_byte(vx) # R = x
-            #nm[i + 3] = 255            # A = opaque
-            i += 4
+            # Trackmania's swizzled format. ByGzR0Ax.
+            rgba = Color(0, nc_to_byte(vz), nc_to_byte(vy), nc_to_byte(vx))
+            nm[x, y] = rgba
+            # For visual inspection and/or comparison with standard normal map
+            # generators, use RxGyBzA1
+            #rgba = Color(nc_to_byte(vx), nc_to_byte(vy), nc_to_byte(vz), 255)
+    nm.close()
+    hm.close()
     return nm_surf

@@ -1,42 +1,34 @@
-from cairo import Context, Format, ImageSurface
+from pygame import Color, Surface
 
 class Renderable:
-    """ diffuse and specular are float tuples (r,g,b) or (r,g,b,a),
-        z is a single float. """
+    """ diffuse and specular are pygame Color values. z is a single float. """
     def __init__(self, diffuse, specular, z):
         self.diffuse = diffuse
         self.specular = specular
         self.z = z
 
-    def path(self, cr: Context):
+    def render(self, surface, colour):
         raise Exception("render() not implemented")
 
-    def render(self, cr: Context, colour):
-        if len(colour) == 4:
-            cr.set_source_rgba(*colour)
-        else:
-            cr.set_source_rgb(*colour)
-        cr.new_path()
-        self.path(cr)
-        cr.fill()
+    def render_diffuse(self, surface):
+        self.render(surface, self.diffuse)
 
-    def render_diffuse(self, cr: Context):
-        self.render(cr, self.diffuse)
+    def render_specular(self, surface):
+        self.render(surface, self.specular)
 
-    def render_specular(self, cr: Context):
-        self.render(cr, self.specular)
-
-    def render_height_map(self, cr: Context):
-        self.render(cr, (self.z, self.z, self.z))
+    def render_height_map(self, surface):
+        cb = int(round(self.z * 255))
+        self.render(surface, Color(cb, cb, cb))
 
 
 class Rect(Renderable):
-    def __init__(self, diffuse, specular, z, x, y, w, h):
+    def __init__(self, diffuse, specular, z, rect):
         super().__init__(diffuse, specular, z)
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
+        self.rect = rect
+        self.x = rect.x
+        self.y = rect.y
+        self.w = rect.w
+        self.h = rect.h
 
-    def path(self, cr: Context):
-         cr.rectangle(self.x, self.y, self.w, self.h)
+    def render(self, surface, colour):
+        surface.fill(colour, self.rect)

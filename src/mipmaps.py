@@ -1,6 +1,6 @@
 import os
 import sys
-from cairo import Context, Format, ImageSurface
+import pygame
 from bumpmap import height_map_to_normals
 
 class MipMapGenerator:
@@ -38,26 +38,17 @@ class MipMapGenerator:
         """ tchar is 'D', 'S', or 'N'. """
         if img == None:
             return
-        img = self.resize(img, w, h)
+        if img.get_width() != w or img.get_height != h:
+            img = pygame.transform.smoothscale(img, (w, h))
         if tchar == 'N':
             img = height_map_to_normals(img)
         d = os.path.abspath(os.path.dirname(sys.argv[0]))
         filename = os.path.join(os.path.dirname(d), "pngs",
                 "Stadium%s%s%02d.png" % (self.basename, tchar, layer + 1))
-        img.write_to_png(filename)
+        pygame.image.save(img, filename)
         # H is to save the original heightmap as well as the normal map
         if tchar == 'H':
             self.scale_and_save(img, w, h, layer, 'N')
-
-    def resize(self, img, w, h):
-        if img == None or (img.get_width() == w or img.get_height() == h):
-            return img
-        new_img = img.create_similar(img.get_content(), w, h)
-        cr = Context(new_img)
-        cr.scale(w / img.get_width(), h / img.get_height())
-        cr.set_source_surface(img, 0, 0)
-        cr.paint()
-        return new_img
 
     def render_layer(self, layer, method, w, h):
         """ Can be overridden to return a cairo Surface. If the result's size

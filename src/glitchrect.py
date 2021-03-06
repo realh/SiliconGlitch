@@ -1,7 +1,8 @@
 import random
 import operator
 from functools import reduce
-from cairo import Context, Format, ImageSurface
+import pygame
+from pygame import Color, Surface
 import render
 from mipmaps import MipMapGenerator
 
@@ -12,7 +13,7 @@ NUM_STRIPS = 16
 BACKGROUND_SPECULAR1 = 0.25
 BACKGROUND_SPECULAR2 = 0.333
 BACKGROUND_BUMPINESS = 0.2
-FOREGROUND_SPECULAR = 0.5
+FOREGROUND_SPECULAR = 128
 
 class GlitchRectBackground:
     """ Main 2:1 rectangle texture """
@@ -37,27 +38,22 @@ class GlitchRectBackground:
             if n % 2:
                 d = self.strip1
                 b = 0
-                s = self.strip1[:3] + (BACKGROUND_SPECULAR1,)
+                s = BACKGROUND_SPECULAR1
             else:
                 d = self.strip2
                 b = BACKGROUND_BUMPINESS
-                s = self.strip2[:3] + (BACKGROUND_SPECULAR2,)
-            strips.append(render.Rect(d, s, b, n * sw, 0, sw, self.height))
+                s = BACKGROUND_SPECULAR2
+            s = Color(d.r, d.g, d.b, int(round(s * 255)))
+            strips.append(render.Rect(d, s, b,
+                pygame.Rect(n * sw, 0, sw, self.height)))
         return strips
-
-class Rect:
-    def __init__(self, x, y, w, h):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
 
 
 # Squarish blocks are added with dimension limits according to these constants.
 RAND_SQ_BASE = 8
 RAND_SQ_MIN = 3
 RAND_SQ_MAX = 5
-RAND_SQ_PADDING = RAND_SQ_BASE
+RAND_SQ_PADDING = RAND_SQ_BASE / 2
 
 
 def fill_random_squarishes(rects, width, height):
@@ -65,7 +61,6 @@ def fill_random_squarishes(rects, width, height):
     that rects near edges or corners are duplicated for tilability in an
     eclosing rect of width x height. The outer list may be empty at input. This
     function adds rects until the enclosing space is "fullish". """
-    new_rects = []
     attempts = 0
     RSP = RAND_SQ_PADDING
     while attempts < 10:
@@ -78,20 +73,28 @@ def fill_random_squarishes(rects, width, height):
         w *= RAND_SQ_BASE
         h *= RAND_SQ_BASE
         clash = False
-        group = [Rect(x, y, w, h)]
+        group = [pygame.Rect(x, y, w, h)]
+        cx = x - RSP
+        cy = y - RSP
+        cw = w + 2 * RSP
+        ch = h + 2 * RSP
+        collidables = [pygame.Rect(cx, cy, cw, ch)]
         if x + w > width:
-            group.append(Rect(x - width, y, w, h))
+            group.append(pygame.Rect(x - width, y, w, h))
+        if cx + cw > width:
+            collidables.append(pygame.Rect(cx - width, cy, cw, ch))
         if y + h > height:
-            group.append(Rect(x, y - height, w, h))
+            group.append(pygame.Rect(x, y - height, w, h))
             if x + w > width:
-                group.append(Rect(x - width, y - height, w, h))
+                group.append(pygame.Rect(x - width, y - height, w, h))
+        if cy + ch > height:
+            collidables.append(pygame.Rect(cx, cy - height, cw, ch))
+            if cx + cw > width:
+                collidables.append(pygame.Rect(cx - width, cy - height, cw, ch))
         for og in rects:
             for oldr in og:
-                for newr in group:
-                    if newr.x <= oldr.x + oldr.w + RSP and \
-                            newr.x + newr.w + RSP >= oldr.x and \
-                            newr.y <= oldr.y + oldr.h + RSP and \
-                            newr.y + newr.h + RSP >= oldr.y:
+                for newr in collidables:
+                    if rects_collide(oldr, newr):
                         attempts += 1
                         clash = True
                         break
@@ -102,6 +105,12 @@ def fill_random_squarishes(rects, width, height):
         if not clash:
             attempts = 0
             rects.append(group)
+
+# pygame's collide test says "except the top+bottom or left+right edges".
+# What's that supposed to mean? Anyway, it returns false negatives.
+def rects_collide(r1, r2):
+    return r1.x <= r2.x + r2.w and r1.x + r1.w >= r2.x and \
+        r1.y <= r2.y + r2.h and r1.y + r1.h >= r2.y
 
 
 STRIP1 = (0.2, 0.275, 0.4)
@@ -126,13 +135,14 @@ class GlitchRectMipMaps(MipMapGenerator):
         j = from_index
         while j < len(squarishes):
             group = squarishes[j]
-            grey = 0.7 + random.random() * 0.1
+            grey = round((0.7 + random.random() * 0.1) * 255)
             spec = (grey, grey, grey, FOREGROUND_SPECULAR)
             # TODO: Randomise spec a bit
-            grey = (grey, grey, grey, 0.9)
+            grey = (grey, grey, grey, 240)
             for i in range(len(group)):
                 r = group[i]
-                group[i] = render.Rect(grey, spec, 1, r.x, r.y, r.w, r.h)
+                group[i] = render.Rect(grey, spec, 1,
+                        pygame.Rect(r.x, r.y, r.w, r.h))
             j += 1
 
     def prepare_layer(self, layer, w, h):
@@ -148,13 +158,12 @@ class GlitchRectMipMaps(MipMapGenerator):
         self.squarishes = squarishes
         
     def render_layer(self, layer, method, w, h):
-        alpha = len(self.strip1) == 4 or method != "diffuse"
+        alpha = len(self.strip1) == 4 or method == "specular"
         if alpha:
-            fmt = Format.ARGB32
+            flags = pygame.SRCALPHA
         else:
-            fmt = Format.RGB24
-        img = ImageSurface(fmt, self.width, self.height)
-        cr = Context(img)
+            flags = 0
+        img = Surface((self.width, self.height), flags, 32)
         strip1 = self.adjust_rgb_for_layer(STRIP1, layer)
         strip2 = self.adjust_rgb_for_layer(STRIP2, layer)
         stripper = GlitchRectBackground(self.width, self.height, strip1, strip2,
@@ -163,12 +172,18 @@ class GlitchRectMipMaps(MipMapGenerator):
         squarishes = reduce(operator.concat, self.squarishes)
         rects.extend(squarishes)
         for r in rects:
-            getattr(r, "render_" + method)(cr)
+            getattr(r, "render_" + method)(img)
         return img
 
     def adjust_rgb_for_layer(self, rgb, layer):
-        return (rgb[0] + 0.05 * layer, rgb[1] + 0.065 * layer,
-                rgb[2] + 0.1 * layer)
+        colour = (round((rgb[0] + 0.025 * layer) * 255),
+                  round((rgb[1] + 0.0325 * layer) * 255),
+                  round((rgb[2] + 0.05 * layer) * 255))
+        try:
+            return Color(*colour)
+        except:
+            print("Bad rgb", rgb, "* layer", layer, ":", colour)
+            raise
 
 
 def floor():
