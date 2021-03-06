@@ -23,18 +23,19 @@ def sample_luminance(data, w, h, x, y):
     return data[i + 1] / 255
 
 
-def signed_byte(f):
-    i = int(round(f * 127))
-    if f < 0:
-        i = 255 + i
-    return i
+def nc_to_byte(f):
+    """ Instead of two's complement, it seems like the standard is to use an
+    offset of 128. """
+    return int(round(f * 127)) + 128
+    
 
-
-def height_map_to_normals(hm_surf, amp = 1):
+def height_map_to_normals(hm_surf, amp = 20):
     """ hm_surf is an ImageSurface whose pixel values represent heights between
     0 and 1. Only the green channel is read. The output consists of normals for
     the surface in R0GzByAx format. amp is a multiplication factor for the
-    slope ratios. """
+    slope ratios. GIMP's default equivalent for amp is 10, so we might as well
+    use that, bearing in mind we also divide by 2 to average 2 differences
+    across 3 pixels. """
     w = hm_surf.get_width()
     h = hm_surf.get_height()
     hm = hm_surf.get_data()
@@ -56,7 +57,7 @@ def height_map_to_normals(hm_surf, amp = 1):
             py1 = sample_luminance(hm, w, h, x, y + 1)
             # These should really be called dz/dx and dz/dy
             dx = (px1 - px0) * amp
-            dy = (py1 - py0) * amp
+            dy = (py1 - py0) * -amp # Cairo y is inverted wrt 3D space
             if dx == 0 and dy == 0:
                 # Shortcut
                 vx = 0
@@ -77,14 +78,16 @@ def height_map_to_normals(hm_surf, amp = 1):
                 vx = nx / mag
                 vy = ny / mag
                 vz = nz / mag
-            nm[i] = signed_byte(vy)     # B = y
-            nm[i + 1] = signed_byte(vz) # G = z
-            nm[i + 2] = 0               # R = 0
-            nm[i + 3] = signed_byte(vx) # A = x
-            # Use the following values for visual inspection
-            #nm[i] = signed_byte(vz)     # B = z
-            #nm[i + 1] = signed_byte(vy) # G = y
-            #nm[i + 2] = signed_byte(vx) # R = x
-            #nm[i + 3] = 255             # A = opaque
+            # Trackmania's swizzled format.
+            nm[i] = nc_to_byte(vy)     # B = y
+            nm[i + 1] = nc_to_byte(vz) # G = z
+            nm[i + 2] = 0              # R = 0
+            nm[i + 3] = nc_to_byte(vx) # A = x
+            # Use the following for visual inspection and/or comparison with
+            # standard normal map generators.
+            #nm[i] = nc_to_byte(vz)     # B = z
+            #nm[i + 1] = nc_to_byte(vy) # G = y
+            #nm[i + 2] = nc_to_byte(vx) # R = x
+            #nm[i + 3] = 255            # A = opaque
             i += 4
     return nm_surf
