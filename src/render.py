@@ -32,3 +32,9 @@ class Rect(Renderable):
 
     def render(self, surface, colour):
         surface.fill(colour, self.rect)
+
+    def colliderect(self, r):
+        return self.rect.collide(r)
+
+    def collidelist(self, l):
+        return self.rect.collidelist(l)

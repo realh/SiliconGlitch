@@ -5,6 +5,7 @@ import pygame
 from pygame import Color, Surface
 import render
 from mipmaps import MipMapGenerator
+from colour import random_colour
 
 NUM_STRIPS = 16
 # I think in TM1/Forever the specular RGB determine what colour it shines,
@@ -83,6 +84,8 @@ def fill_random_squarishes(rects, width, height):
             group.append(pygame.Rect(x - width, y, w, h))
         if cx + cw > width:
             collidables.append(pygame.Rect(cx - width, cy, cw, ch))
+        if cx < 0:
+            collidables.append(pygame.Rect(cx + width, cy, cw, ch))
         if y + h > height:
             group.append(pygame.Rect(x, y - height, w, h))
             if x + w > width:
@@ -91,6 +94,14 @@ def fill_random_squarishes(rects, width, height):
             collidables.append(pygame.Rect(cx, cy - height, cw, ch))
             if cx + cw > width:
                 collidables.append(pygame.Rect(cx - width, cy - height, cw, ch))
+            if cx < 0:
+                collidables.append(pygame.Rect(cx + width, cy - height, cw, ch))
+        if cy < 0:
+            collidables.append(pygame.Rect(cx, cy + height, cw, ch))
+            if cx + cw > width:
+                collidables.append(pygame.Rect(cx - width, cy + height, cw, ch))
+            if cx < 0:
+                collidables.append(pygame.Rect(cx + width, cy + height, cw, ch))
         for og in rects:
             for oldr in og:
                 for newr in collidables:
@@ -107,10 +118,10 @@ def fill_random_squarishes(rects, width, height):
             rects.append(group)
 
 # pygame's collide test says "except the top+bottom or left+right edges".
-# What's that supposed to mean? Anyway, it returns false negatives.
+# What's that supposed to mean?
 def rects_collide(r1, r2):
-    return r1.x <= r2.x + r2.w and r1.x + r1.w >= r2.x and \
-        r1.y <= r2.y + r2.h and r1.y + r1.h >= r2.y
+    return (r1.x <= r2.x + r2.w) and (r1.x + r1.w >= r2.x) and \
+        (r1.y <= r2.y + r2.h) and (r1.y + r1.h >= r2.y)
 
 
 STRIP1 = (0.2, 0.275, 0.4)
@@ -136,8 +147,7 @@ class GlitchRectMipMaps(MipMapGenerator):
         while j < len(squarishes):
             group = squarishes[j]
             grey = round((0.7 + random.random() * 0.1) * 255)
-            spec = (grey, grey, grey, FOREGROUND_SPECULAR)
-            # TODO: Randomise spec a bit
+            spec = self.random_spec(grey)
             grey = (grey, grey, grey, 240)
             for i in range(len(group)):
                 r = group[i]
@@ -148,10 +158,19 @@ class GlitchRectMipMaps(MipMapGenerator):
     def prepare_layer(self, layer, w, h):
         if layer == 0:
             return
-        # Remove about a quarter of the squarishes
-        squarishes = self.squarishes[:len(self.squarishes) * 3 // 4]
-        # TODO: Change the specular of remaining squarishes
+        # Remove about a third of the squarishes; this just truncates the list
+        # so the other 2/3 will stay in the same place in the whole mipmap
+        # chain.
+        squarishes = self.squarishes[:len(self.squarishes) * 2 // 3]
+        # Change the specular of about a third of remaining squarishes; this
+        # time make the changes in random places throught the list so we don't
+        # always change the same ones.
         l = len(squarishes)
+        for group in squarishes:
+            if random.randint(0, 2) == 0:
+                spec = self.random_spec(group[0].diffuse[0])
+                for sq in group:
+                    sq.specular = spec
         # Refill
         fill_random_squarishes(squarishes, self.width, self.height)
         self.add_texture_to_squarishes(squarishes, l)
@@ -184,6 +203,17 @@ class GlitchRectMipMaps(MipMapGenerator):
         except:
             print("Bad rgb", rgb, "* layer", layer, ":", colour)
             raise
+
+    def random_spec(self, grey):
+        r,g,b = random_colour(0.25, grey)
+        # Make sure blue isn't the strongest component, so there's a bit more
+        # contrast with the background strips
+        if b >= r and b >= g:
+            if r < g:
+                r, b = b, r
+            else:
+                b, g = g, b
+        return (r,g,b)
 
 
 def floor():
