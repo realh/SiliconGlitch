@@ -1,3 +1,4 @@
-pngs
+*.dds
+*.png
 __pycache__
 */__pycache__/*
